@@ -1,0 +1,10 @@
+## Ignore AVR Studio 4 temporary files, build results.
+
+# User-specific files
+AvrBuild.bat
+
+# Build results
+*.map
+*.obj
+*.tmp
+*.aws
