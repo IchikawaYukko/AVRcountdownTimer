@@ -4,6 +4,9 @@
 
 ;Registers
 .def	SREG_SAVER = R1
+.def	TP_KEY		= R2
+.def	TM_KEY		= R3
+.def	START_KEY	= R4
 .def	GX	= R16	;General Purpose X
 .def	GY  = R17	;General Purpose Y
 .def	ARG1	= R18	;Argument 1

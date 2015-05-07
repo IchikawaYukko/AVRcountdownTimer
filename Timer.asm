@@ -11,32 +11,7 @@
 ;
 ;other fuses are default.
 
-;7segment data
-.equ SEG0=0b00000010
-.equ SEG1=0b10011110
-.equ SEG2=0b00100100
-.equ SEG3=0b00001100
-.equ SEG4=0b10011000
-.equ SEG5=0b01001000
-;.equ SEG6=0b01000000
-.equ SEG6=0b11000000	;Yet Another 6
-;.equ SEG7=0b00011010
-.equ SEG7=0b00011110	;Yet Another 7
-.equ SEG8=0b00000000
-;.equ SEG9=0b00001000
-.equ SEG9=0b00011000	;Yet Another 9
-.equ SEGBL=0b11111110	;Blank
-
 .include "registers.inc"
-
-;.equ KEYIN=0xFF	;Key input sampling
-.equ KEYINWAIT_H=0xC0	;Key input sampling
-.equ KEYINWAIT_L=0xFF
-.equ KEYMASK=0b01001100
-.equ SEGON=0xFF	;7SEG ON WAIT TIME
-.equ SEGONH=0x1C	;7SEG ON WAIT TIME
-.equ SEGONL=0xFF	;7SEG ON WAIT TIME
-.equ SEGOFF=1	;7SEG OFF WAIT TIME
 
 .org 0x00
 		;Interrupt Vectors (90S2313/tiny2313)
@@ -90,14 +65,18 @@ RESET:
 		;Detect reset type
 		IN GX,MCUSR
 		SBRS GX,PORF
-		RJMP STAGE0	;IF reset by reset button, then beep
+		RJMP STAGE0	;IF reset by power-on, then beep
 
 		;PowerON beep
-		LDI XH,8
+		LDI XH,1
+		LDI XL,255
+		LDI ARG1,192
+		RCALL BEEP	;Pi
+		LDI XH,1
 		LDI XL,255
 		LDI ARG1,255
-		RCALL BEEP
-STAGE0:
+		RCALL BEEP	;Po
+STAGE0:	;Powerdown and resume from it
 		;Clear PowerON-reset flag
 		CLR GX
 		OUT MCUSR,GX
@@ -106,6 +85,9 @@ STAGE0:
 		RCALL POWERDOWN
 
 		;WAIT after resume
+		LDI ZH,0xFF
+		LDI ZL,0xFF
+		RCALL WAIT16
 		LDI ZH,0xFF
 		LDI ZL,0xFF
 		RCALL WAIT16
@@ -153,6 +135,12 @@ STAGE3:				;Alert Stage (Countdown ended)
 		
 		RJMP RESET
 
+.include "general_routines.asm"
+.include "bcdto7seg.asm"
+.include "key.asm"
+.include "beep.asm"
+.include "7segment.asm"
+
 POWERDOWN:
 		RCALL SEG_ALLOFF
 		;INT0 enable
@@ -173,73 +161,6 @@ POWERDOWN_RESUME:
 
 		RET
 
-KEYINPUT:
-		;Read KEY twice
-		IN GX,PIND	;1st
-
-		;IF keys is not pushed then exit.
-		ANDI GX,KEYMASK
-		CPI GX,KEYMASK
-		BREQ KEYINPUT_RET
-
-		LDI ZH,KEYINWAIT_H
-		LDI ZL,KEYINWAIT_L
-		RCALL WAIT16
-		IN GY,PIND	;2nd
-
-		;Check 1st and 2nd both same data
-		;(Chattering Filter)
-		AND GX,GY
-		ANDI GX,KEYMASK
-
-		;CALL Event handler
-		SBRS GX,PIND6
-		RCALL TP_PUSHED		;T+
-		SBRS GX,PIND3
-		RCALL TM_PUSHED		;T-
-		SBRS GX,PIND2
-		RCALL START_PUSHED	;START
-KEYINPUT_RET:
-		RET
-		
-TP_PUSHED:
-		INC MIN_L
-		CPI MIN_L,0x0A
-		BRNE TP_RET
-		CPI MIN_H,0x09
-		BREQ TP_99
-		CLR MIN_L
-		INC MIN_H
-		RET
-TP_99:
-		LDI MIN_L,0x09
-TP_RET:	RET
-
-TM_PUSHED:
-		DEC MIN_L
-		CPI MIN_L,0xFF
-		BRNE TM_RET
-		CPI MIN_H,0x00
-		BREQ TM_01
-		LDI MIN_L,0x09
-		DEC MIN_H
-		RET
-TM_01:
-		LDI MIN_L,0x01
-TM_RET:	RET
-
-START_PUSHED:
-		;Start 16bit Timer
-		LDI GX,(1<<WGM12)+(1<<CS11)+(1<<CS10)
-		OUT TCCR1B,GX	;CK select 1/64 - Comp Clear
-		SBI DDRD,PORTD6
-		SBI DDRD,PORTD3	;DDRB PD6,3(LED) output
-		;INT0 enable
-		LDI GX,(1<<INT0)
-		OUT GIMSK,GX
-
-START_RET:	RET
-
 LED:
 		CPI MSEC,0x01
 		BREQ LEDA
@@ -256,166 +177,8 @@ LEDB:
 		CBI PORTD,PORTD3
 		RET
 
-SEG_ALLOFF:
-		SBI PORTD,PORTD0
-		SBI PORTD,PORTD1
-		SBI PORTD,PORTD4
-		SBI PORTD,PORTD5
-
-		;OUTPUT blank
-		LDI GX,SEGBL
-		OUT PORTB,GX
-		RET
-
-SEG:
-		;SEGMENT1
-		SBI PORTD,PORTD0
-		SBI PORTD,PORTD1
-		SBI PORTD,PORTD4
-		CBI PORTD,PORTD5
-		MOV ARG1,SEC_L
-		RCALL PER_SEGMENT
-
-		;SEGMENT2
-		SBI PORTD,0
-		SBI PORTD,1
-		CBI PORTD,4
-		SBI PORTD,5
-		MOV ARG1,SEC_H
-		RCALL PER_SEGMENT
-
-		;SEGMENT3
-		SBI PORTD,0
-		CBI PORTD,1
-		SBI PORTD,4
-		SBI PORTD,5
-		MOV ARG1,MIN_L
-		RCALL PER_SEGMENT
-
-		;SEGMENT4
-		CBI PORTD,0
-		SBI PORTD,1
-		SBI PORTD,4
-		SBI PORTD,5
-		MOV ARG1,MIN_H
-		RCALL PER_SEGMENT
-
-		RET
-
-PER_SEGMENT:
-		;Output to Segment
-		;ARG1 = data to segment
-
-		;Convert BCD to Segment
-		MOV GX,ARG1
-		RCALL BCDTOSEG
-		OUT PORTB,RETURN	;OUTPUT
-
-		;WAIT(on)
-		LDI ZH,SEGONH
-		LDI ZL,SEGONL
-		RCALL WAIT16
-
-		;OUTPUT blank
-		LDI GX,SEGBL
-		OUT PORTB,GX
-
-		;WAIT(off)
-		LDI ARG1,SEGOFF
-		RCALL WAIT
-
-		RET
-
-.include "general_routines.asm"
-
-BCDTOSEG:
-		;RETURN = BCDTOSEG(Arg1)
-		;ARG1 = BCD
-		;RETURN = 7segment data
-		CPI ARG1,0x00
-		BREQ SEGD0
-		CPI ARG1,0x01
-		BREQ SEGD1
-		CPI ARG1,0x02
-		BREQ SEGD2
-		CPI ARG1,0x03
-		BREQ SEGD3
-		CPI ARG1,0x04
-		BREQ SEGD4
-		CPI ARG1,0x05
-		BREQ SEGD5
-		CPI ARG1,0x06
-		BREQ SEGD6
-		CPI ARG1,0x07
-		BREQ SEGD7
-		CPI ARG1,0x07
-		BREQ SEGD7
-		CPI ARG1,0x08
-		BREQ SEGD8
-		CPI ARG1,0x09
-		BREQ SEGD9
-
-		;if not match above, set blank.
-		LDI RETURN,SEGBL
-		RET
-SEGD0:
-		LDI RETURN,SEG0
-		RET
-SEGD1:
-		LDI RETURN,SEG1
-		RET
-SEGD2:
-		LDI RETURN,SEG2
-		RET
-SEGD3:
-		LDI RETURN,SEG3
-		RET
-SEGD4:
-		LDI RETURN,SEG4
-		RET
-SEGD5:
-		LDI RETURN,SEG5
-		RET
-SEGD6:
-		LDI RETURN,SEG6
-		RET
-SEGD7:
-		LDI RETURN,SEG7
-		RET
-SEGD8:
-		LDI RETURN,SEG8
-		RET
-SEGD9:
-		LDI RETURN,SEG9
-		RET
-
-BEEP:
-		;ARG1 = beep frequency
-		;XH,XL = beep length
-		;Port init
-		SBI DDRD,DDD2	;PORTD2 set output (BUZZER)
-BEEP_LOOP:
-		CBI PORTD,PORTD2	;out L
-
-		;WAIT
-		PUSH ARG1
-		RCALL WAIT
-		POP ARG1
-
-		SBI PORTD,PORTD2	;out H
-
-		;WAIT
-		PUSH ARG1
-		RCALL WAIT
-		POP ARG1
-
-		SBIW XH:XL,1
-		BRNE BEEP_LOOP	;if(X != 0) goto BEEP_LOOP
-
-		CBI DDRD,DDD2	;PORTD2 set input (START BUTTON)
-		RET
-
 EXT_INT0:
+		IN SREG_SAVER,SREG	;Save SREG
 		ADIW XH:XL,1
 		CPI XH,0xFF
 		BRNE EXT_INT0_RET
@@ -428,7 +191,9 @@ EXT_INT0:
 		LDI MIN_L,0
 		LDI MIN_H,0
 EXT_INT0_RET:
+		OUT SREG,SREG_SAVER	;Restore SREG
 		RETI
+
 EXT_INT1:
 		RETI
 TIM_CAPT1:

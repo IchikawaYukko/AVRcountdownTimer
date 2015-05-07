@@ -1,0 +1,92 @@
+;KEY input handring
+
+.include "registers.inc"
+
+.equ KEYIN=0x03	;Key input sampling
+.equ KEYINWAIT_H=0xC0	;Key input sampling
+.equ KEYINWAIT_L=0xFF
+.equ KEYMASK=0b01001100
+
+KEYINPUT:
+		;Read KEY
+		IN GX,PIND
+
+		;IF keys is not pushed then exit.
+		ANDI GX,KEYMASK
+		CPI GX,KEYMASK
+		BREQ KEYINPUT_RET
+
+		;Chattering Filter
+		SBRS GX,PIND6
+		INC TP_KEY
+		SBRS GX,PIND3
+		INC TM_KEY
+		SBRS GX,PIND2
+		INC START_KEY
+
+		;KEY sample KEYIN times then call handler
+		LDI GX,KEYIN
+		CP TP_KEY,GX
+		BREQ TP
+		CP TM_KEY,GX
+		BREQ TM
+		CP START_KEY,GX
+		BREQ START
+KEYINPUT_RET:
+		RET
+;CALL Event handlers
+TP:
+		CLR TP_KEY
+		RCALL TP_PUSHED		;T+
+		RET
+TM:
+		CLR TM_KEY
+		RCALL TM_PUSHED		;T-
+		RET
+START:
+		CLR START_KEY
+		RCALL START_PUSHED	;START
+		RET
+
+TP_PUSHED:	;T+ key handler
+		INC MIN_L
+		CPI MIN_L,0x0A
+		BRNE TP_RET
+		CPI MIN_H,0x09
+		BREQ TP_99
+		CLR MIN_L
+		INC MIN_H
+		RET
+TP_99:
+		LDI MIN_L,0x09
+TP_RET:	RET
+
+TM_PUSHED:	;T- key handler
+		DEC MIN_L
+		CPI MIN_L,0xFF
+		BREQ TM_X9	;IF 0xXX 0xFF then 0xXX-1 0x09
+
+		CPI MIN_L,0x00
+		LDI GX,0x00
+		CPC MIN_H,GX
+		BREQ TM_01	;IF 0x00 0x00 then 0x00 0x01
+		RET
+TM_X9:
+		LDI MIN_L,0x09
+		DEC MIN_H
+		RET
+TM_01:
+		LDI MIN_L,0x01
+TM_RET:	RET
+
+START_PUSHED:	;START key handler
+		;Start 16bit Timer
+		LDI GX,(1<<WGM12)+(1<<CS11)+(1<<CS10)
+		OUT TCCR1B,GX	;CK select 1/64 - Comp Clear
+		SBI DDRD,PORTD6
+		SBI DDRD,PORTD3	;DDRB PD6,3(LED) output
+		;INT0 enable
+		LDI GX,(1<<INT0)
+		OUT GIMSK,GX
+
+START_RET:	RET

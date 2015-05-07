@@ -1,6 +1,10 @@
+;General purpose routines
+
 .include "registers.inc"
 
 WAIT:
+		;WAIT
+		;ARG1 = wait length.
 		DEC ARG1
 		BRNE WAIT	;JP NZ,WAIT
 		RET
