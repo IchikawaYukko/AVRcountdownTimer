@@ -3,8 +3,9 @@
 .include "registers.inc"
 
 .equ KEYIN=0x03	;Key input sampling
-.equ KEYINWAIT_H=0xC0	;Key input sampling
-.equ KEYINWAIT_L=0xFF
+.equ KEYIN_HOLD=0x40
+;.equ KEYINWAIT_H=0xC0	;Key input sampling
+;.equ KEYINWAIT_L=0xFF
 .equ KEYMASK=0b01001100
 
 KEYINPUT:
@@ -86,7 +87,49 @@ START_PUSHED:	;START key handler
 		SBI DDRD,PORTD6
 		SBI DDRD,PORTD3	;DDRB PD6,3(LED) output
 		;INT0 enable
-		LDI GX,(1<<INT0)
-		OUT GIMSK,GX
+		;LDI GX,(1<<INT0)
+		;OUT GIMSK,GX
 
 START_RET:	RET
+
+;---------
+;Key input for STAGE2
+
+KEYINPUT2:
+		;Read KEY
+		IN GX,PIND
+
+		;IF keys is not pushed then exit.
+		ANDI GX,0b00000100
+		CPI GX,0b00000100
+		BREQ KEYINPUT2_RET
+
+		;Chattering Filter
+		SBRS GX,PIND2
+		INC START_KEY
+
+		;KEY sample KEYIN_HOLD times then call handler
+		LDI GX,KEYIN_HOLD
+		CP START_KEY,GX
+		BREQ START2
+KEYINPUT2_RET:
+		RET
+;CALL Event handlers
+START2:
+		CLR START_KEY
+		RCALL START_PUSHED2	;START
+		RET
+
+;PUSH HOLD to power-off
+START_PUSHED2:	;START key handler
+		CLR GX
+		OUT TCCR1B,GX	;Timer stop
+
+		LDI XH,8
+		LDI XL,255
+		LDI ARG1,255
+		RCALL BEEP	;Pi
+
+		RJMP RESET
+
+START_RET2:	RET

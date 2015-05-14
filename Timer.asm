@@ -52,7 +52,7 @@ RESET:
 		OUT PORTD,GX	;Set PORTD2,3,6 Pullup
 
 		;Timer1
-		LDI GX,0x01
+		LDI GX,0x7A
 		OUT OCR1AH,GX
 		LDI GX,0x12
 		OUT OCR1AL,GX	;Comp Reg Set 31250(0x7A12)
@@ -111,6 +111,7 @@ STAGE2:				;Countdown Stage
 		;Update 7Segments + LEDs
 		RCALL SEG
 		RCALL LED
+		RCALL KEYINPUT2
 
 		;IF Timer1 stopped goto Stage 3
 		IN GX,TCCR1B
@@ -178,22 +179,6 @@ LEDB:
 		RET
 
 EXT_INT0:
-		IN SREG_SAVER,SREG	;Save SREG
-		ADIW XH:XL,1
-		CPI XH,0xFF
-		BRNE EXT_INT0_RET
-		CPI XL,0xFF
-		BRNE EXT_INT0_RET
-
-		;LDI,MSEC,0
-		LDI SEC_L,1
-		LDI SEC_H,0
-		LDI MIN_L,0
-		LDI MIN_H,0
-EXT_INT0_RET:
-		OUT SREG,SREG_SAVER	;Restore SREG
-		RETI
-
 EXT_INT1:
 		RETI
 TIM_CAPT1:
@@ -233,8 +218,8 @@ TIM_CHK:		;Check MIN_H/L SEC_H/L MSEC == 00000
 		OUT TCCR1B,GX	;Timer stop
 
 		;INT0 disable
-		LDI GX,(0<<INT0)
-		OUT GIMSK,GX
+		;LDI GX,(0<<INT0)
+		;OUT GIMSK,GX
 
 TIM_RET:
 		OUT SREG,SREG_SAVER	;Restore SREG
